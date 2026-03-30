@@ -6,7 +6,7 @@ const SKILLS_API = "http://localhost:5000/api/skills/chatbot-context";
 export default function AIChatbot() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([
-    { role: "assistant", text: "Hi! 👋 Ask me anything about skills or courses on this platform." }
+    { role: "assistant", text: "Hi! 👋 Welcome to Skill Exchange! Ask me about courses, instructors, or anything on our platform." }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -14,44 +14,36 @@ export default function AIChatbot() {
   const bottomRef = useRef(null);
 
   // Fetch all skills once when chatbot first opens
-useEffect(() => {
-  if (open && !skillsContext) {
-    fetch(SKILLS_API)
-      .then(r => r.json())
-      .then(skills => {
+  useEffect(() => {
+    if (open && !skillsContext) {
+      fetch(SKILLS_API)
+        .then(r => r.json())
+        .then(skills => {
+          const sortedSkills = [...skills].sort(
+            (a, b) => (b.averageRating || 0) - (a.averageRating || 0)
+          );
 
-        // 🔹 Sort skills by rating (highest first)
-        const sortedSkills = [...skills].sort(
-          (a, b) => (b.averageRating || 0) - (a.averageRating || 0)
-        );
-
-        // 🔹 Create AI context from sorted skills
-        const summary = sortedSkills.map((s, i) => `
+          const summary = sortedSkills.map((s, i) => `
 Skill ${i + 1}
 Title: ${s.title}
 Category: ${s.category}
 Level: ${s.level}
 Instructor: ${s.instructor}
-
 Description: ${s.description}
-
 Duration: ${s.duration}
 Time Per Week: ${s.timePerWeek}
-
 Payment Option: ${s.paymentOptions}
 Exchange Skill: ${s.exchangeFor || "None"}
-
 Average Rating: ${s.averageRating || 0}
 Total Ratings: ${s.totalRatings || 0}
-
 Tags: ${(s.tags || []).join(", ")}
 `).join("\n");
 
-        setSkillsContext(summary);
-      })
-      .catch(() => setSkillsContext("Could not load skills data."));
-  }
-}, [open]);
+          setSkillsContext(summary);
+        })
+        .catch(() => setSkillsContext("Could not load skills data."));
+    }
+  }, [open]);
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -65,38 +57,56 @@ Tags: ${(s.tags || []).join(", ")}
     setMessages(prev => [...prev, { role: "user", text: userMsg }]);
     setLoading(true);
 
-   const systemPrompt = `
-You are an AI assistant for a Skill Exchange learning platform.
+    const systemPrompt = `
+You are SkillBot, the official AI assistant for "Skill Exchange" — a skill-learning platform.
 
-Users can:
-• Learn skills by paying money
-• Exchange their own skills to learn from others
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ABOUT SKILL EXCHANGE (THE PLATFORM):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"Skill Exchange" is an online learning platform where users can:
+• Learn skills by paying with money
+• OR exchange their own skills to learn from others (barter-style learning)
 
-You have TWO responsibilities:
+If anyone asks "What is Skill Exchange?" or "What is this platform?", always answer:
+"Skill Exchange is our online learning platform where you can learn new skills either by paying for them or by exchanging your own skills with other learners and instructors."
 
-1️⃣ PLATFORM ASSISTANT  
-When the user asks about courses, skills, ratings, instructors, categories, beginner skills, or recommendations,
-use the platform data below.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+YOUR STRICT SCOPE — ONLY ANSWER THESE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Questions about courses and skills listed on the platform
+✅ Questions about instructors, categories, levels, ratings
+✅ Questions about how the platform works (payment, skill exchange, enrollment)
+✅ Recommendations like "best beginner course", "top rated skill", "courses under X price"
+✅ Explaining what a skill or course on the platform teaches (e.g., "what does the Python course cover?")
 
-2️⃣ GENERAL AI ASSISTANT  
-If the user asks general questions (definitions, explanations, learning advice, etc.),
-you can answer using your own knowledge like a normal AI.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STRICTLY OFF-LIMITS — NEVER ANSWER THESE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+❌ Sports, cricket, IPL, football, or any games
+❌ News, politics, world events, celebrities
+❌ General knowledge or trivia unrelated to the platform
+❌ Programming help, code writing, debugging
+❌ Definitions of general concepts (unless explaining a course topic on the platform)
+❌ Anything not related to the Skill Exchange platform or its courses
 
-Examples:
-- "Top rated skills" → Use platform data
-- "Beginner skills" → Use platform data
-- "What is fighting?" → Answer normally
-- "Explain AI" → Answer normally
+If a user asks something outside your scope, respond exactly like this:
+"I'm only able to help with questions about the Skill Exchange platform and its courses. Is there a skill or course you'd like to explore? 😊"
 
-Platform Skills Data:
+Do NOT say things like "As a general AI..." or try to answer off-topic questions partially. Always redirect.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PLATFORM SKILLS DATA:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${skillsContext}
 
-Guidelines:
-• Recommend skills when relevant
-• Be helpful and friendly
-• If a user asks about a specific skill in the platform, show its details
-• If the question is general knowledge, answer normally like Gemini
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RESPONSE STYLE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Be friendly, helpful, and concise
+• Use bullet points or short paragraphs for clarity
+• Always stay focused on the platform
 `;
+
     const history = messages
       .filter(m => m.role !== "system")
       .map(m => ({
@@ -157,7 +167,7 @@ Guidelines:
         }}>
           {/* Header */}
           <div style={{ background: "#6c47ff", color: "#fff", padding: "14px 18px", fontWeight: "bold", fontSize: "15px" }}>
-            🤖 SkillBot — Ask about any course!
+            🤖 SkillBot — Your Skill Exchange Guide
           </div>
 
           {/* Messages */}
