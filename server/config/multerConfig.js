@@ -20,7 +20,7 @@ uploadDirs.forEach(dir => {
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     let uploadPath = 'uploads/';
-    
+
     switch (file.fieldname) {
       case 'certificate':
         uploadPath += 'certificates/';
@@ -37,7 +37,7 @@ const storage = multer.diskStorage({
       default:
         uploadPath += 'certificates/';
     }
-    
+
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
@@ -51,10 +51,12 @@ const storage = multer.diskStorage({
 const fileFilter = (req, file, cb) => {
   const fileTypes = {
     certificate: {
-      mimetypes: ['image/jpeg', 'image/jpg', 'image/png'],
-      extensions: /jpeg|jpg|png/,
-      maxSize: 5 * 1024 * 1024, // 5MB
-      errorMsg: 'Only images (JPEG, JPG, PNG) files are allowed for certificates'
+      mimetypes: [
+        'application/pdf'
+      ],
+      extensions: /pdf/,
+      maxSize: 5 * 1024 * 1024,
+      errorMsg: 'Only PDF files are allowed for certificates'
     },
     introVideo: {
       mimetypes: ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm'],
@@ -77,7 +79,7 @@ const fileFilter = (req, file, cb) => {
   };
 
   const fieldConfig = fileTypes[file.fieldname] || fileTypes.certificate;
-  
+
   const extname = fieldConfig.extensions.test(path.extname(file.originalname).toLowerCase());
   const mimetype = fieldConfig.mimetypes.includes(file.mimetype);
 
@@ -93,9 +95,9 @@ const fileFilter = (req, file, cb) => {
 // Initialize multer upload with enhanced configuration
 const upload = multer({
   storage,
-  limits: { 
-    fileSize: 100 * 1024 * 1024, 
-    files: 10, 
+  limits: {
+    fileSize: 100 * 1024 * 1024,
+    files: 10,
     fields: 20
   },
   fileFilter
@@ -109,7 +111,7 @@ const validateFileSize = (req, res, next) => {
       error: `File size exceeds the limit of ${req.maxFileSize / (1024 * 1024)}MB`
     });
   }
-  
+
   if (req.files) {
     for (const file of Object.values(req.files).flat()) {
       if (req.maxFileSize && file.size > req.maxFileSize) {
@@ -120,7 +122,7 @@ const validateFileSize = (req, res, next) => {
       }
     }
   }
-  
+
   next();
 };
 
@@ -148,13 +150,13 @@ module.exports = {
   upload,
   validateFileSize,
   handleMulterError,
-  
+
   // Predefined upload configurations
   uploadCertificate: upload.single('certificate'),
   uploadVideo: upload.single('introVideo'),
   uploadDocument: upload.single('document'),
   uploadProfile: upload.single('profileImage'),
-  
+
   // Multiple file uploads
   uploadMultipleCertificates: upload.array('certificates', 5),
   uploadMixed: upload.fields([
