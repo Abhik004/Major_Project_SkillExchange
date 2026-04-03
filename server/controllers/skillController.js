@@ -2,13 +2,30 @@ const Skill = require('../models/Skill');
 const asyncHandler = require('../utils/asyncHandler');
 const { getAuth } = require('@clerk/express');
 const { clerkClient } = require('@clerk/clerk-sdk-node');
-const { verifyCertificateCredential } = require('../utils/ocrVerification');
 const path = require('path');
 const fs = require('fs');
 const util = require('util')
 const cloudinary = require('../config/cloudinary');
 const unlinkFile = util.promisify(fs.unlink);
+const axios = require('axios');
+const FormData = require('form-data');
 
+//python ocr + verification
+async function verifyWithPython(filePath) {
+  const formData = new FormData();
+  formData.append('file', fs.createReadStream(filePath));
+
+  const response = await axios.post(
+    'http://localhost:5005/verify',
+    formData,
+    {
+      headers: formData.getHeaders(),
+      timeout: 15000
+    }
+  );
+
+  return response.data;
+}
 
 async function getUserEmail(userId) {
   if (!userId) return null;
@@ -24,8 +41,8 @@ const generateFileUrl = (req, filePath) => {
   const uploadType = filePath.includes("certificates")
     ? "certificates"
     : filePath.includes("videos")
-    ? "videos"
-    : "uploads";
+      ? "videos"
+      : "uploads";
   return `/uploads/${uploadType}/${fileName}`;
 };
 
@@ -40,7 +57,7 @@ const uploadToCloud = async (filePath, folder, resourceType = 'auto') => {
     return result.secure_url;
   } catch (error) {
     // If upload fails, still try to delete local file
-    await unlinkFile(filePath).catch(() => {});
+    await unlinkFile(filePath).catch(() => { });
     throw new Error(`Cloud upload failed: ${error.message}`);
   }
 };
@@ -79,8 +96,6 @@ exports.getSkills = asyncHandler(async (req, res) => {
   });
 });
 
-
-
 // GET user's own skills (for dashboard)
 exports.getMySkills = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
@@ -90,7 +105,7 @@ exports.getMySkills = asyncHandler(async (req, res) => {
 
   const { status = 'all', page = 1, limit = 10 } = req.query;
   const filter = { ownerId: String(userId) };
-  
+
   if (status !== 'all') {
     filter.status = status;
   }
@@ -163,8 +178,7 @@ exports.getSkillForEdit = asyncHandler(async (req, res) => {
   res.json({ success: true, data: skill });
 });
 
-
-// CREATE skill with Gemini AI verification (credential ID + intelligent title matching)
+// CREATE skill with Python verification
 exports.createSkill = asyncHandler(async (req, res) => {
   try {
     const { userId } = getAuth(req);
@@ -213,94 +227,29 @@ exports.createSkill = asyncHandler(async (req, res) => {
 
     const certificateFile = req.files.certificate[0];
     const certificatePath = path.join(__dirname, "..", certificateFile.path);
-    const isImage = certificateFile.mimetype.startsWith("image/");
 
-    // Gemini AI Verification (for images only)
-    if (isImage) {
-      console.log("\n🤖 Starting Gemini AI certificate verification...");
-      console.log("Verifying: Credential ID + Intelligent Title Matching + Content Appropriateness");
+    console.log("🐍 Using Python verification service...");
 
-      const verificationResult = await verifyCertificateCredential(
-        certificatePath,
-        body.credentialId,
-        body.title
-      );
+    const result = await verifyWithPython(certificatePath);
 
-      console.log("\n📊 Verification result:", verificationResult);
+    if (!result || result.status !== 1) {
+      const fsPromises = fs.promises;
+      await fsPromises.unlink(certificatePath).catch(() => { });
 
-      // If verification fails, clean up and return detailed error
-      if (!verificationResult.success) {
-        const fsPromises = fs.promises;
-        await fsPromises.unlink(certificatePath).catch(() => {});
-        if (req.files?.introVideo) {
-          const videoPath = path.join(__dirname, "..", req.files.introVideo[0].path);
-          await fsPromises.unlink(videoPath).catch(() => {});
-        }
-
-        // Build detailed error message
-        let detailedMessage = verificationResult.message;
-        
-        // Additional context for debugging
-        let errorDetails = {
-          credentialValid: verificationResult.credentialValid,
-          titleValid: verificationResult.titleValid,
-          isAppropriate: verificationResult.isAppropriate
-        };
-
-        // Add AI analysis details
-        if (verificationResult.certificateTitle) {
-          errorDetails.certificateTitle = verificationResult.certificateTitle;
-        }
-        if (verificationResult.relationship) {
-          errorDetails.relationship = verificationResult.relationship;
-        }
-        if (verificationResult.confidence !== undefined) {
-          errorDetails.aiConfidence = verificationResult.confidence;
-        }
-        if (verificationResult.aiReason) {
-          errorDetails.aiAnalysis = verificationResult.aiReason;
-        }
-        if (verificationResult.inappropriateReason) {
-          errorDetails.inappropriateReason = verificationResult.inappropriateReason;
-        }
-
-        console.log("❌ Verification failed:", errorDetails);
-
-        return res.status(400).json({
-          success: false,
-          message: detailedMessage,
-          verificationFailed: true,
-          details: errorDetails
-        });
+      if (req.files?.introVideo) {
+        const videoPath = path.join(__dirname, "..", req.files.introVideo[0].path);
+        await fsPromises.unlink(videoPath).catch(() => { });
       }
 
-      console.log(`✅ Certificate verified successfully with Gemini AI!`);
-      console.log(`   - Credential ID: Found`);
-      console.log(`   - Title Match: ${verificationResult.relationship} (${verificationResult.confidence}% confidence)`);
-      console.log(`   - Content: Appropriate`);
-      console.log(`   - Certificate: "${verificationResult.certificateTitle}"`);
-    } else {
-      console.log("📄 PDF uploaded - skipping OCR verification (PDF OCR not implemented)");
+      return res.status(400).json({
+        success: false,
+        message: result?.error || "Certificate verification failed",
+        verificationFailed: true
+      });
     }
 
-    // Generate URLs for uploaded files
-    //DISK FILE STORAGE (FOR BACKUP IN CASE OF CLOUDINARY FAILURE)
-    /*const certificateUrl = generateFileUrl(req, certificateFile.path);
-    let introVideoUrl = "";
-    if (req.files?.introVideo && req.files.introVideo[0]) {
-      introVideoUrl = generateFileUrl(req, req.files.introVideo[0].path);
-      console.log("🎥 Intro video uploaded successfully");
-    }
+    console.log("✅ Certificate verified via Python service");
 
-    // Create Skill entry
-    const newSkill = await Skill.create({
-      ...body,
-      ownerId: String(userId),
-      email: email || "",
-      certificateUrl,
-      introVideoUrl,
-      status: body.status || "published"
-    });*/
     //CLOUDINARY UPLOAD(CLOUD STORAGE)
     console.log("☁️ Uploading certificate to cloud...");
     const certificateUrl = await uploadToCloud(certificatePath, 'certificates', 'image');
@@ -311,21 +260,21 @@ exports.createSkill = asyncHandler(async (req, res) => {
       console.log("☁️ Uploading video to cloud...");
       const videoPath = path.join(__dirname, "..", req.files.introVideo[0].path);
       introVideoUrl = await uploadToCloud(videoPath, 'videos', 'video');
-      
     }
+
     // Create Skill entry
     const newSkill = await Skill.create({
       ...body,
       ownerId: String(userId),
       email: email || "",
-      certificateUrl, // Now a Cloudinary URL
-      introVideoUrl,  // Now a Cloudinary URL
+      certificateUrl, 
+      introVideoUrl,  
       status: body.status || "published"
     });
 
     res.status(201).json({
       success: true,
-      message: "✅ Skill created successfully with AI-verified credentials",
+      message: "✅ Skill created successfully with verified credentials",
       data: newSkill
     });
   } catch (error) {
@@ -353,130 +302,52 @@ exports.createSkill = asyncHandler(async (req, res) => {
   }
 });
 
-// UPDATE skill (with Gemini AI verification for certificate changes)
+// UPDATE skill
 exports.updateSkill = async (req, res) => {
   try {
     const { userId } = getAuth(req);
     const { id } = req.params;
-    
-    if (!userId) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Unauthorized' 
-      });
-    }
+
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
     const skill = await Skill.findById(id);
-    
-    if (!skill) {
-      return res.status(404).json({
-        success: false,
-        message: 'Skill not found'
-      });
-    }
+    if (!skill) return res.status(404).json({ success: false, message: 'Skill not found' });
 
-    // Check ownership
-    if (skill.ownerId !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Forbidden: You can only update your own skills'
-      });
+    if (String(skill.ownerId) !== String(userId)) {
+      return res.status(403).json({ success: false, message: 'Forbidden: You can only update your own skills' });
     }
 
     const { skillData } = req.body;
     const parsedData = typeof skillData === 'string' ? JSON.parse(skillData) : skillData;
 
-    // Handle new certificate upload with Gemini AI verification
     if (req.files && req.files['certificate'] && req.files['certificate'][0]) {
       const certificateFile = req.files['certificate'][0];
       const certificatePath = path.join(__dirname, "..", certificateFile.path);
-      const isImage = certificateFile.mimetype.startsWith("image/");
 
-      // Verify new certificate with Gemini AI if it's an image
-      if (isImage) {
-        console.log("\n🤖 Verifying updated certificate with Gemini AI...");
-        
-        const verificationResult = await verifyCertificateCredential(
-          certificatePath,
-          parsedData.credentialId || skill.credentialId,
-          parsedData.title || skill.title
-        );
+      console.log("🐍 Verifying updated certificate via Python...");
+      const result = await verifyWithPython(certificatePath);
 
-        if (!verificationResult.success) {
-          // Clean up the uploaded file
-          fs.unlinkSync(certificatePath);
-          
-          let errorDetails = {
-            credentialValid: verificationResult.credentialValid,
-            titleValid: verificationResult.titleValid,
-            isAppropriate: verificationResult.isAppropriate
-          };
-
-          if (verificationResult.certificateTitle) {
-            errorDetails.certificateTitle = verificationResult.certificateTitle;
-          }
-          if (verificationResult.relationship) {
-            errorDetails.relationship = verificationResult.relationship;
-          }
-          if (verificationResult.confidence !== undefined) {
-            errorDetails.aiConfidence = verificationResult.confidence;
-          }
-          if (verificationResult.inappropriateReason) {
-            errorDetails.inappropriateReason = verificationResult.inappropriateReason;
-          }
-          
-          return res.status(400).json({
-            success: false,
-            message: verificationResult.message,
-            verificationFailed: true,
-            details: errorDetails
-          });
-        }
-
-        console.log("✅ Updated certificate verified successfully");
+      if (!result || result.status !== 1) {
+        fs.unlinkSync(certificatePath);
+        return res.status(400).json({
+          success: false,
+          message: result?.error || "Certificate verification failed",
+          verificationFailed: true
+        });
       }
 
-      // Delete old certificate
-      if (skill.certificateUrl) {
-        const oldCertPath = skill.certificateUrl.split('/uploads/')[1];
-        const fullPath = path.join(__dirname, '../uploads/', oldCertPath);
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath);
-        }
-      }
-      
-      parsedData.certificateUrl = generateFileUrl(req, certificateFile.path);
+      console.log("✅ Updated certificate verified");
+      const certificateUrl = await uploadToCloud(certificatePath, 'certificates', 'image');
+      parsedData.certificateUrl = certificateUrl;
     }
 
-    // Handle new video upload
-    if (req.files && req.files['introVideo'] && req.files['introVideo'][0]) {
-      if (skill.introVideoUrl) {
-        const oldVideoPath = skill.introVideoUrl.split('/uploads/')[1];
-        const fullPath = path.join(__dirname, '../uploads/', oldVideoPath);
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath);
-        }
-      }
-      parsedData.introVideoUrl = generateFileUrl(req, req.files['introVideo'][0].path);
-    }
-
-    // Update skill
     Object.assign(skill, parsedData);
     await skill.save();
 
-    res.status(200).json({
-      success: true,
-      message: 'Skill updated successfully',
-      data: skill
-    });
-
+    return res.json({ success: true, message: "Skill updated successfully", data: skill });
   } catch (error) {
     console.error('Error updating skill:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update skill',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to update skill', error: error.message });
   }
 };
 
@@ -494,45 +365,34 @@ exports.deleteSkill = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: 'You can only delete your own skills' });
   }
 
-  // Delete associated files
-  const fs = require('fs').promises;
-  
+  const fsPromises = require('fs').promises;
   if (skill.certificateUrl) {
     const certPath = path.join(__dirname, '..', skill.certificateUrl);
-    await fs.unlink(certPath).catch(() => {});
+    await fsPromises.unlink(certPath).catch(() => { });
   }
-  
   if (skill.introVideoUrl) {
     const videoPath = path.join(__dirname, '..', skill.introVideoUrl);
-    await fs.unlink(videoPath).catch(() => {});
+    await fsPromises.unlink(videoPath).catch(() => { });
   }
 
   await skill.deleteOne();
   res.json({ success: true, message: 'Skill deleted successfully' });
 });
 
-// SAVE draft (without OCR verification for drafts)
+// SAVE draft
 exports.saveDraft = async (req, res) => {
   try {
     const { userId } = getAuth(req);
-    
-    if (!userId) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Unauthorized' 
-      });
-    }
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
     const { skillData } = req.body;
     const parsedData = typeof skillData === 'string' ? JSON.parse(skillData) : skillData;
 
-    // Generate certificate URL
     let certificateUrl = '';
     if (req.files && req.files['certificate'] && req.files['certificate'][0]) {
       certificateUrl = generateFileUrl(req, req.files['certificate'][0].path);
     }
 
-    // Generate intro video URL
     let introVideoUrl = '';
     if (req.files && req.files['introVideo'] && req.files['introVideo'][0]) {
       introVideoUrl = generateFileUrl(req, req.files['introVideo'][0].path);
@@ -542,40 +402,23 @@ exports.saveDraft = async (req, res) => {
       ...parsedData,
       ownerId: userId,
       certificateUrl,
-      introVideoUrl, 
+      introVideoUrl,
       status: 'draft'
     });
 
     await draftSkill.save();
-
-    res.status(201).json({
-      success: true,
-      message: 'Draft saved successfully',
-      data: draftSkill
-    });
-
+    res.status(201).json({ success: true, message: 'Draft saved successfully', data: draftSkill });
   } catch (error) {
     console.error('Error saving draft:', error);
-    
-    // Clean up uploaded files if draft save fails
     if (req.files) {
-      if (req.files['certificate']) {
-        fs.unlinkSync(req.files['certificate'][0].path);
-      }
-      if (req.files['introVideo']) {
-        fs.unlinkSync(req.files['introVideo'][0].path);
-      }
+      if (req.files['certificate']) fs.unlinkSync(req.files['certificate'][0].path);
+      if (req.files['introVideo']) fs.unlinkSync(req.files['introVideo'][0].path);
     }
-    
-    res.status(500).json({
-      success: false,
-      message: 'Failed to save draft',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to save draft', error: error.message });
   }
 };
 
-// PUBLISH skill (with Gemini AI verification when publishing from draft)
+// PUBLISH skill
 exports.publishSkill = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   const skill = await Skill.findById(req.params.id);
@@ -589,38 +432,21 @@ exports.publishSkill = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: 'You can only publish your own skills' });
   }
 
-  // If publishing from draft, verify the certificate with Gemini AI
   if (skill.status === 'draft' && skill.certificateUrl) {
     const certificatePath = path.join(__dirname, '..', skill.certificateUrl);
-    
+
     if (fs.existsSync(certificatePath)) {
-      const isImage = skill.certificateUrl.match(/\.(jpg|jpeg|png)$/i);
-      
-      if (isImage) {
-        console.log("\n🤖 Verifying certificate before publishing...");
-        
-        const verificationResult = await verifyCertificateCredential(
-          certificatePath,
-          skill.credentialId,
-          skill.title
-        );
+      console.log("🐍 Verifying certificate before publishing via Python...");
+      const result = await verifyWithPython(certificatePath);
 
-        if (!verificationResult.success) {
-          return res.status(400).json({
-            success: false,
-            message: `Cannot publish: ${verificationResult.message}`,
-            verificationFailed: true,
-            details: {
-              credentialValid: verificationResult.credentialValid,
-              titleValid: verificationResult.titleValid,
-              isAppropriate: verificationResult.isAppropriate,
-              aiAnalysis: verificationResult.aiReason
-            }
-          });
-        }
-
-        console.log("✅ Certificate verified - proceeding with publication");
+      if (!result || result.status !== 1) {
+        return res.status(400).json({
+          success: false,
+          message: result?.error || "Cannot publish: certificate verification failed",
+          verificationFailed: true
+        });
       }
+      console.log("✅ Certificate verified - proceeding with publication");
     }
   }
 
@@ -640,7 +466,7 @@ exports.addRating = asyncHandler(async (req, res) => {
   }
 
   const { userId } = getAuth(req);
-  
+
   if (!userId) {
     return res.status(401).json({ success: false, message: 'You must be signed in to rate a skill' });
   }
@@ -652,17 +478,17 @@ exports.addRating = asyncHandler(async (req, res) => {
   }
 
   if (String(item.ownerId) === String(userId)) {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'You cannot rate your own skill' 
+    return res.status(403).json({
+      success: false,
+      message: 'You cannot rate your own skill'
     });
   }
 
   const existingRating = item.ratings.find(r => String(r.userId) === String(userId));
-  
+
   if (existingRating) {
-    return res.status(400).json({ 
-      success: false, 
+    return res.status(400).json({
+      success: false,
       message: 'You have already rated this skill',
       alreadyRated: true
     });
@@ -693,11 +519,11 @@ exports.addRating = asyncHandler(async (req, res) => {
 // GET user's rating for a specific skill
 exports.getUserRating = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
-  
+
   if (!userId) {
-    return res.json({ 
-      success: true, 
-      data: { hasRated: false, rating: null } 
+    return res.json({
+      success: true,
+      data: { hasRated: false, rating: null }
     });
   }
 
