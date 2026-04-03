@@ -115,12 +115,12 @@ export default function PublishSkillPage() {
           ...currentModule,
           order: prev.modules.length + 1,
           // Initialize with an empty videos array
-          
+
         }
       ]
     }));
-  
-    
+
+
     setCurrentModule({ title: "", description: "" }); // Reset module input
   };
 
@@ -148,23 +148,20 @@ export default function PublishSkillPage() {
 
   const handleCertificateChange = (e) => {
     const file = e.target.files[0];
+
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        showToast('File size must be less than 5MB', 'error');
+      if (file.type !== "application/pdf") {
+        showToast("Only PDF certificates are allowed", "error");
         return;
       }
-      setForm({ ...form, certificateFile: file });
 
-      // Create preview for images
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setCertificatePreview(reader.result);
-        };
-        reader.readAsDataURL(file);
-      } else {
-        setCertificatePreview(null);
+      if (file.size > 5 * 1024 * 1024) {
+        showToast("File size must be less than 5MB", "error");
+        return;
       }
+
+      setForm({ ...form, certificateFile: file });
+      setCertificatePreview(file.name);
     }
   };
 
@@ -292,7 +289,7 @@ export default function PublishSkillPage() {
   };
   const handleSubmit = (e) => {
     e.preventDefault()
-    
+
 
     // Updated required fields to include credentialId
     const requiredFields = ['title', 'category', 'level', 'duration', 'timePerWeek', 'description', 'credentialId']
@@ -464,7 +461,7 @@ export default function PublishSkillPage() {
                   {/* Certificate Upload */}
                   <div className="space-y-2">
                     <Label className="text-lg font-semibold text-gray-700">
-                      Upload Certificate (Image(jpg/jpeg/png)) *
+                      Upload Certificate (PDF) *
                     </Label>
                     <div className="flex items-center justify-center w-full">
                       <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-amber-300 border-dashed rounded-xl cursor-pointer bg-white hover:bg-amber-50 transition-colors">
@@ -473,12 +470,12 @@ export default function PublishSkillPage() {
                           <p className="mb-2 text-sm text-gray-500">
                             <span className="font-semibold">Click to upload</span> or drag and drop
                           </p>
-                          <p className="text-xs text-gray-500">PNG, JPG, JPEG (MAX. 5MB)</p>
+                          <p className="text-xs text-gray-500">PDF (MAX. 5MB)</p>
                         </div>
                         <input
                           type="file"
                           className="hidden"
-                          accept="image/jpeg,image/jpg,image/png,application/pdf"
+                          accept="application/pdf"
                           onChange={handleCertificateChange}
                         />
                       </label>
@@ -488,12 +485,10 @@ export default function PublishSkillPage() {
                     {form.certificateFile && (
                       <div className="mt-3 p-3 bg-white rounded-xl border-2 border-amber-200">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <CheckCircle className="h-5 w-5 text-green-500" />
-                            <span className="text-sm font-medium text-gray-700">
-                              {form.certificateFile.name}
-                            </span>
-                          </div>
+                          <span className="text-sm font-medium text-gray-700">
+                            {form.certificateFile.name}
+                          </span>
+
                           <button
                             type="button"
                             onClick={() => {
@@ -505,13 +500,6 @@ export default function PublishSkillPage() {
                             <X className="h-5 w-5" />
                           </button>
                         </div>
-                        {certificatePreview && (
-                          <img
-                            src={certificatePreview}
-                            alt="Certificate preview"
-                            className="mt-3 max-h-48 rounded-lg object-contain"
-                          />
-                        )}
                       </div>
                     )}
                   </div>
@@ -832,7 +820,7 @@ export default function PublishSkillPage() {
                       Saving...
                     </>
                   ) : (
-                    'Save as Draft(Coming Soon)'
+                    'Save as Draft'
                   )}
                 </Button>
                 <Button
