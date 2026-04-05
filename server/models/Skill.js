@@ -23,7 +23,14 @@ const teachingFormatSchema = new mongoose.Schema(
 const moduleSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: { type: String, default: '' },
-  order: { type: Number, default: 0 }, // For ordering modules
+  order: { type: Number, default: 0 },
+  level: { 
+    type: String, 
+    required: true, 
+    enum: ['Beginner', 'Intermediate', 'Advanced'],
+    default: 'Beginner' 
+  }
+  // For ordering modules
    // Embed the video schema as an array(later)
 });
 

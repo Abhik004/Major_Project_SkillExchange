@@ -1104,6 +1104,16 @@ const handleCompleteModule = useCallback(async (moduleId, moduleTitle) => {
                                     <h3 className={`font-semibold text-lg ${isCompleted && isEnrolled ? 'text-green-800' : 'text-gray-900'}`}>
                                       Module {module.order}: {module.title}
                                     </h3>
+
+                                     {module.level && (
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide uppercase w-fit ${
+                                  module.level === 'Beginner' ? 'bg-green-100 text-green-700' :
+                                  module.level === 'Intermediate' ? 'bg-blue-100 text-blue-700' :
+                                  'bg-purple-100 text-purple-700'
+                                }`}>
+                                  {module.level}
+                                </span>
+                              )}
                                   </div>
                                   {isOwnSkill && (
                                     <Button

@@ -78,7 +78,7 @@ export default function PublishSkillPage() {
     modules: []
   })
 
-  const [currentModule, setCurrentModule] = useState({ title: "", description: "" });
+  const [currentModule, setCurrentModule] = useState({ title: "", description: "" ,level: "Beginner"});
   const [skillInput, setSkillInput] = useState("")
   const [certificatePreview, setCertificatePreview] = useState(null);
   const [videoPreview, setVideoPreview] = useState(null);
@@ -121,7 +121,7 @@ export default function PublishSkillPage() {
     }));
 
 
-    setCurrentModule({ title: "", description: "" }); // Reset module input
+   setCurrentModule({ title: "", description: "", level: "Beginner" });// Reset module input
   };
 
   const removeModule = (index) => {
@@ -199,7 +199,12 @@ export default function PublishSkillPage() {
 
       const skillData = {
         ...form,
-        status: endpoint.includes('draft') ? 'draft' : 'published'
+        modules: form.modules.map(mod => ({
+        title: mod.title,
+        description: mod.description,
+        order: mod.order,
+        level: mod.level // <--- Ensure this is included
+        }))
       };
 
       // Remove files before stringifying
@@ -588,24 +593,39 @@ export default function PublishSkillPage() {
                 {/* Display Added Modules */}
                 <div className="space-y-4 mb-6">
                   {form.modules.map((module, modIndex) => (
-                    <Card key={modIndex} className="bg-white p-4 shadow-sm">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center">
-                          <BookCopy className="h-5 w-5 mr-3 text-teal-600" />
-                          <h4 className="font-semibold text-lg">{module.order}. {module.title}</h4>
+                    <Card key={modIndex} className="bg-white p-5 shadow-sm border-l-4 border-l-teal-500 hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-start">
+                        <div className="flex gap-4">
+                          <div className="bg-teal-100 text-teal-700 w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0">
+                            {module.order}
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-3">
+                              <h4 className="font-bold text-lg text-gray-800">{module.title}</h4>
+                              {/* Proficiency Badge */}
+                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide uppercase ${
+                                module.level === 'Beginner' ? 'bg-green-100 text-green-700' :
+                                module.level === 'Intermediate' ? 'bg-blue-100 text-blue-700' :
+                                'bg-purple-100 text-purple-700'
+                              }`}>
+                                {module.level}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600 leading-relaxed">
+                              {module.description}
+                            </p>
+                          </div>
                         </div>
-                        {/* "Add Video" button is GONE. Only remove button remains. */}
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="text-red-500 hover:text-red-700"
+                          className="text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                           onClick={() => removeModule(modIndex)}
                         >
-                          <X className="h-4 w-4" />
+                          <X className="h-5 w-5" />
                         </Button>
                       </div>
-                      <p className="text-sm text-gray-600 pl-8">{module.description}</p>
                     </Card>
                   ))}
                 </div>
@@ -618,6 +638,19 @@ export default function PublishSkillPage() {
                     value={currentModule.title}
                     onChange={(e) => setCurrentModule(prev => ({ ...prev, title: e.target.value }))}
                   />
+                    <Select 
+                      value={currentModule.level} 
+                      onValueChange={(v) => setCurrentModule(prev => ({ ...prev, level: v }))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select Module Proficiency" />
+                      </SelectTrigger>
+                      <SelectContent className="z-50 bg-white border shadow-md">
+                        <SelectItem value="Beginner">Beginner</SelectItem>
+                        <SelectItem value="Intermediate">Intermediate</SelectItem>
+                        <SelectItem value="Advanced">Advanced</SelectItem>
+                      </SelectContent>
+                    </Select>
                   <Textarea
                     placeholder="Module Description"
                     rows={2}
